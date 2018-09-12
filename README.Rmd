@@ -1,0 +1,20 @@
+---
+title: "README"
+author: "ChrisBow"
+date: "12/09/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## README
+
+Code chunks for analysis of [Case Europe][1] CEAC18 Conference discussion on Twitter. Not all code in markdown document was included in report.
+
+Report and figures can be found on [Medium, here][2].
+
+[1]: https://www.case.org/Public_Policy/Europe.html
+
+[2]: https://medium.com/@chrisBow/reviewing-the-2018-case-europe-conference-on-twitter-885e89a59b22

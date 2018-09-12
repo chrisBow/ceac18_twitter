@@ -1,0 +1,445 @@
+---
+title: "ceac_week_tweets"
+author: "ChrisBow"
+date: "01/09/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load_packages}
+
+library(dplyr)
+library(readr)
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+library(forcats)
+
+```
+
+```{r messages = FALSE, import_data}
+
+tweets <- read_csv("case_tweets.csv")
+
+```
+
+```{r}
+
+# Create date variable from the date-time 'created' variable
+
+tweets <- 
+  tweets %>%
+  mutate(date = round_date(created, "days"))
+
+```
+
+### Overview of conference Twitter activity
+
+
+```{r}
+
+# Plot #CEAC18 tweets by day up until last day of conference
+
+tweets %>%
+  filter(date != ymd("2018-09-01")) %>%
+  group_by(date) %>%
+  summarise(n_tweets = n()) %>%
+  ggplot(aes(date, n_tweets)) +
+  geom_col(fill = cc_navy) +
+  labs(title = "Number of Tweets Containing Hashtag 'CEAC18'",
+       x = "Date",
+       y = "Number of Tweets",
+       caption = "") +
+  theme_tufte_cc()
+
+```
+
+
+
+```{r}
+
+# Plot daily tweets and retweets
+
+tweets %>%
+  filter(date != ymd("2018-09-01")) %>%
+  group_by(date, isRetweet) %>%
+  summarise(n_tweets = n()) %>%
+  rename(Retweet = isRetweet) %>%
+  ggplot(aes(date, n_tweets, fill = Retweet)) +
+  geom_col(position = "dodge") +
+  labs(title = "Number of Tweets Containing Hashtag 'CEAC18'",
+       x = "Date",
+       y = "Number of Tweets",
+       caption = "") +
+  scale_fill_manual(values=c(cc_navy, cc_pink), labels = c("Not Retweet", "Retweet")) +
+  theme_tufte_cc() +
+  theme(legend.title = element_blank())
+
+```
+
+
+```{r}
+
+# Create dataframe of tweets only from days of conference
+
+conference <- interval(ymd("2018-08-27"), ymd("2018-08-31"))
+
+tweets_mf <-
+  tweets %>%
+  filter(date %within% conference)
+
+```
+
+
+```{r}
+
+# Plot top 5 conference tweeters
+
+tweets_mf %>%
+  filter(isRetweet == FALSE) %>%
+  group_by(screenName) %>%
+  summarise(n_tweets = n()) %>%
+  top_n(5) %>%
+  ggplot(aes(reorder(screenName, n_tweets), n_tweets)) +
+  geom_col(fill = cc_navy) +
+  labs(title = "Top CASE Conference Tweeters",
+       x = "Twitter handle",
+       y = "Number of tweets",
+       caption = "") +
+  theme_tufte_cc() +
+  coord_flip()
+
+```
+
+
+```{r}
+
+# Plot top conference retweeters
+
+tweets_mf %>%
+  filter(isRetweet == TRUE) %>%
+  group_by(screenName) %>%
+  summarise(n_tweets = n()) %>%
+  top_n(10) %>%
+  ggplot(aes(reorder(screenName, n_tweets), n_tweets)) +
+  geom_col(fill = cc_navy) +
+  labs(title = "Top CASE Conference Retweeters",
+       x = "Twitter Handle",
+       y = "Number of retweets",
+       caption = "") +
+  theme_tufte_cc() +
+  coord_flip()
+
+```
+
+### Word frequency and sentiment analysis
+
+```{r}
+
+library(tidytext)
+
+```
+
+```{r}
+
+# Prepare tidy dataframe of tokenised tweet text
+
+tweet_words <-
+  tweets_mf %>%
+  filter(isRetweet == FALSE) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+
+```
+
+```{r}
+
+# Add additional stop words
+
+word <- c("t.co", "https", "ceac18", "case_europe", "amp", "edinburgh", "day", 
+          "conference", "session", "social", "hootbusiness", "talk", "morning",
+          "ready", "starts", "it’s", "alextomiles", "hear", "2", "plenary", "we’re", 
+          "time", "macbethdc", "week")
+
+xtra_stop <- data.frame(word)
+
+```
+
+
+
+```{r}
+
+# Plot top words of conference tweets
+
+tweet_words %>%
+  filter(isRetweet == FALSE) %>%
+  anti_join(xtra_stop) %>%
+  group_by(word) %>%
+  summarise(word_n = n()) %>%
+  top_n(20) %>%
+  ggplot(aes(reorder(word, word_n), word_n)) +
+  geom_col(fill = cc_navy) +
+  labs(title = "Top Words Used in #CEAC18 Tweets During Conference",
+       x = "Word",
+       y = "Times used",
+       caption = "'Stop' words, mentions and non-relevant words have been
+       removed from the word list") +
+  theme_tufte_cc() +
+  coord_flip()
+
+```
+
+```{r}
+
+# Import sentiment lexicons
+
+bing_sent <- get_sentiments("bing")
+nrc_sent <- get_sentiments("nrc")
+  
+```
+
+### Perform sentiment analysis
+
+```{r}
+
+# Joing tokenised words with lexicon
+
+tweet_words_bing <-
+  tweet_words %>%
+  inner_join(bing_sent)
+
+```
+
+```{r}
+
+# Summarise sentiment counts by tweet id
+
+tweet_sent_one <- tweet_words_bing %>%
+  group_by(screenName, id, sentiment) %>%
+  summarise(sent_count = n()) %>%
+  spread(sentiment, sent_count) %>%
+  ungroup()
+
+```
+
+```{r}
+
+# Clean any missing values
+
+tweet_sent_one[is.na(tweet_sent_one)] <- 0
+
+```
+
+```{r}
+
+# Create net sentiment variable
+
+tweet_sent_one <-
+  tweet_sent_one %>%
+  mutate(net_sent = positive - negative)
+
+```
+
+```{r}
+
+mean(tweet_sent_one$net_sent)
+
+```
+
+```{r}
+
+median(tweet_sent_one$net_sent)
+
+```
+
+
+```{r}
+
+# Plot histogram of tweet sentiment distribution
+
+ggplot(tweet_sent_one, aes(net_sent)) +
+  geom_histogram(fill = cc_navy) +
+  labs(title = "Distribution of Tweet Sentiment",
+       subtitle = "Average tweet sentiment was positive",
+       y = "Number of tweets",
+       x = "Net sentiment",
+       caption = "Using Bing lexicon") +
+  theme_tufte_cc()
+
+```
+
+```{r}
+
+tweet_sent_one %>%
+  group_by(screenName) %>%
+  summarise(sent_score = sum(net_sent), n_tweets = n()) %>%
+  mutate(ave_sent = sent_score / n_tweets) %>%
+  filter(n_tweets > 2) %>%
+  top_n(10, ave_sent) %>%
+  ungroup() %>%
+  ggplot(aes(reorder(screenName, ave_sent), ave_sent)) +
+           geom_col(fill = cc_navy) +
+           coord_flip() +
+  labs(title = "Top Tweeters by Average Positive Sentiment",
+       y = "Mean positive sentiment per tweet",
+       x = "Twitter handle",
+       caption = "") +
+  theme_tufte_cc()
+  
+
+```
+
+
+```{r most_engage}
+
+# Look at tweets with most engagement
+
+tweets %>%
+  filter(isRetweet == FALSE) %>%
+  mutate(tot_engage = favoriteCount + retweetCount) %>%
+  arrange(desc(tot_engage)) %>%
+  top_n(10, tot_engage) %>%
+  select(screenName, favoriteCount, retweetCount, tot_engage, date, text)
+
+```
+
+```{r most_favs}
+
+# Look for tweets with most favourites
+
+tweets %>%
+  filter(isRetweet == FALSE) %>%
+  mutate(tot_engage = favoriteCount + retweetCount) %>%
+  arrange(desc(favoriteCount)) %>%
+  top_n(10, favoriteCount) %>%
+  select(screenName, favoriteCount, retweetCount, tot_engage, date, text)
+
+```
+
+```{r most_rts}
+
+# Look for tweets with most retweets
+
+tweets %>%
+  filter(isRetweet == FALSE) %>%
+  mutate(tot_engage = favoriteCount + retweetCount) %>%
+  arrange(desc(retweetCount)) %>%
+  top_n(10, retweetCount) %>%
+  select(screenName, favoriteCount, retweetCount, tot_engage, date, text)
+
+```
+
+```{r most_rts}
+
+tweets %>%
+  filter(isRetweet == FALSE) %>%
+  filter(date != ymd("2018-08-30") | date != ymd("2018-08-31")) %>%
+  mutate(tot_engage = favoriteCount + retweetCount) %>%
+  arrange(desc(retweetCount)) %>%
+  top_n(10, retweetCount) %>%
+  select(screenName, favoriteCount, retweetCount, tot_engage, date, text)
+
+```
+
+```{r}
+
+tweets_mf %>%
+  select(favoriteCount, retweetCount) %>%
+  gather(Engagement, number) %>%
+  ggplot(aes(number, fill = Engagement)) + 
+  geom_histogram(binwidth = 5, position = "dodge") +
+  scale_fill_manual(values=c(cc_navy, cc_pink), labels = c("Favorites", "Retweets")) +
+  labs(title = "Distribution of #CEAC18 Tweet Engagement",
+       x = "Number of engagements",
+       y = "Count of engagements") +
+  theme_tufte_cc()
+
+```
+
+## Create retweet network figure for header image
+
+```{r}
+library(stringr)
+```
+
+
+```{r}
+
+# Create dataframe of retweeters and tweet originator
+
+tweet_txt <- tweets_mf %>%
+  filter(isRetweet == TRUE) %>%
+  filter(retweetCount > 1) %>%
+  select(text, screenName) %>%
+  mutate(originator = str_extract(text, "@[a-zA-Z_]+"))
+
+tweet_txt$originator <- str_replace(tweet_txt$originator, "@", "")
+
+tweet_txt <-
+  tweet_txt %>%
+  rename(who_post = originator, 
+         who_retweet = screenName) %>%
+  select(who_retweet, who_post) %>%
+  na.omit()
+
+```
+
+```{r}
+
+retweeter_poster <- as.matrix(tweet_txt)
+
+```
+
+
+```{r}
+
+library(igraph)
+
+```
+
+```{r}
+
+rt_graph <- graph.edgelist(retweeter_poster)
+
+ver_labs = get.vertex.attribute(rt_graph, "name", index=V(rt_graph))
+
+```
+
+```{r}
+
+# Choose layout
+
+glay = layout.fruchterman.reingold(rt_graph)
+
+ 
+# Plot retweet network graph
+
+par(bg = "white", mar = c(1,1,1,1))
+plot(rt_graph, layout = glay,
+vertex.color = cc_navy,
+vertex.size = 5,
+vertex.label = NA,
+vertex.label.family = "sans",
+vertex.shape = "none",
+vertex.label.color = hsv(h = 0, s = 0, v = .95, alpha = 0.5),
+vertex.label.cex = 0.85,
+edge.arrow.size = 0.8,
+edge.arrow.width = 0.5,
+edge.width = 2,
+edge.color = hsv(h = .90, s = 1, v = .7, alpha = 0.3),
+label = NA,
+label.font = 3)
+
+
+# Title
+
+title("",
+cex.main = 1, col.main = cc_pink)
+
+```
+
+
+
